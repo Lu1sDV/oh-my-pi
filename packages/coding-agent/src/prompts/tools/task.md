@@ -29,7 +29,7 @@ Shared edits need one integration owner{{#if ircEnabled}}; siblings coordinate v
 
 # Fast mode
 No per-call tier flag: `tier.subagent` (default `inherit`) and exact-name `task.agentServiceTierOverrides[agent]` configure future spawns. When asked for fast mode, inspect these before claiming it unavailable. Provider priority is not a model or effort change; support and premium cost vary.
-Use approval-gated `cfg://` writes when available; preserve other overrides and keep changes session-only unless asked to save. Otherwise explain the user-configurable setting.
+Merge per-agent changes into the existing override map.
 
 # Format
 {{#if batchEnabled}}`context`: shared (`# Goal`, `# Contract` interfaces); NEVER repeat per task.

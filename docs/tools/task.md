@@ -87,7 +87,7 @@ task:
 
 Keys match the exact, case-sensitive `agent` type, not the spawned `name`. An entry overrides `tier.subagent`; unlisted agents keep that fallback. These settings affect new task/eval spawns, not already-running agents. Priority may cost more and is not guaranteed to be supported or honored by the provider.
 
-In a top-level interactive session, the assistant can read `cfg://task/agentServiceTierOverrides` and request an approval-gated write of the updated map, preserving other entries. Without `/save`, the change is session-only; persist it only when requested. Headless sessions and subagents cannot make these writes, so explain how the user can configure the setting instead of claiming fast mode is unavailable.
+In a top-level interactive session, the assistant can read `cfg://task/agentServiceTierOverrides` and request an approval-gated write of the updated map, preserving other entries. Without a write to `cfg://task/agentServiceTierOverrides/save`, the change is session-only; persist it only when requested. Headless sessions and subagents cannot make these writes, so explain how the user can configure the setting instead of claiming fast mode is unavailable.
 
 See [service-tier precedence](../task-agent-discovery.md#model-and-structured-output-precedence) for inheritance, model resolution, and revival, and [settings](../settings.md) for configuration methods.
 

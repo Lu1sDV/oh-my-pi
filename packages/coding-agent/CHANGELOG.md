@@ -23,6 +23,7 @@
 
 ### Changed
 
+- Task guidance now points agents to existing fast-mode settings for subagents instead of treating the missing per-call flag as unsupported ([#17388](https://github.com/can1357/oh-my-pi/pull/17388) by [@Lu1sDV](https://github.com/Lu1sDV))
 - Session startup overlaps credential-usage reads with tool/context loading and refreshes repository context, context files, and rules concurrently; `PI_TIMING` now separates credential validation from other first-prompt preparation
 - Non-browser launches no longer load cmux/Tern browser evaluators or their accessibility bundles; each backend loads on first use
 - Headless startup no longer loads the interactive composer through plugin-loader SDK self-references or reserved HUD identifiers; injected `api.pi` loads the full host SDK only when accessed
