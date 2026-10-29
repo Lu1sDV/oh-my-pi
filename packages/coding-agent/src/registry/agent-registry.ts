@@ -89,6 +89,13 @@ export interface AgentRef {
 
 export type AgentRefExpectation = AgentRef | AgentSession;
 
+export interface AgentHistoryOptions {
+	sessionFile?: string;
+	ref?: AgentRefExpectation;
+	attributionRevision?: number;
+	owner?: symbol;
+}
+
 /**
  * Whether messaging `ref` resumes it: a live `idle` agent, or a `parked` or
  * killed one whose transcript is on disk. Task summaries use it to tell the
@@ -146,6 +153,8 @@ export class AgentRegistry {
 	readonly #listeners = new Set<RegistryListener>();
 	/** Runtime attribution writes fence transcript scans without blocking unrelated metadata. */
 	readonly #attributionRevisions = new WeakMap<AgentRef, number>();
+	/** Latest turn owner; unlike scan revisions, parking does not supersede it. */
+	readonly #attributionOwners = new WeakMap<AgentRef, symbol>();
 	/** Which of these agents are blocked until others finish. */
 	readonly awaits = new AgentAwaits();
 
@@ -219,29 +228,35 @@ export class AgentRegistry {
 		return this.#attributionRevisions.get(ref) ?? 0;
 	}
 
+	claimAttributionOwner(ref: AgentRef, owner: symbol): boolean {
+		if (this.#refs.get(ref.id) !== ref) return false;
+		this.#attributionOwners.set(ref, owner);
+		return true;
+	}
+
+	isAttributionOwner(ref: AgentRef, owner: symbol): boolean {
+		return this.#refs.get(ref.id) === ref && this.#attributionOwners.get(ref) === owner;
+	}
+
 	/** Attach identity and telemetry, optionally fencing a scan against newer runtime attribution. */
 	setHistory(
 		id: string,
 		history: AgentHistorySummary,
-		expectedSessionFile?: string,
-		expected?: AgentRefExpectation,
-		expectedAttributionRevision?: number,
+		{ sessionFile, ref: expected, attributionRevision, owner }: AgentHistoryOptions = {},
 	): boolean {
 		const ref = this.#refs.get(id);
 		if (
 			!ref ||
 			!this.#matchesExpected(ref, expected) ||
-			(expectedSessionFile !== undefined && ref.sessionFile !== expectedSessionFile)
+			(sessionFile !== undefined && ref.sessionFile !== sessionFile) ||
+			(owner !== undefined && !this.isAttributionOwner(ref, owner))
 		) {
 			return false;
 		}
 		const definedHistory = Object.fromEntries(
 			Object.entries(history).filter(([, value]) => value !== undefined),
 		) as AgentHistorySummary;
-		if (
-			expectedAttributionRevision !== undefined &&
-			expectedAttributionRevision !== this.getAttributionRevision(ref)
-		) {
+		if (attributionRevision !== undefined && attributionRevision !== this.getAttributionRevision(ref)) {
 			delete definedHistory.resolvedModel;
 			delete definedHistory.resolvedModelIsFallback;
 			delete definedHistory.fastMode;
@@ -260,7 +275,7 @@ export class AgentRegistry {
 				definedHistory.fastMode = undefined;
 			}
 			if (
-				expectedAttributionRevision === undefined &&
+				attributionRevision === undefined &&
 				("resolvedModel" in history ||
 					"resolvedModelIsFallback" in history ||
 					"fastMode" in history ||
@@ -275,7 +290,7 @@ export class AgentRegistry {
 		// scan must not replace a newer park-time snapshot; unscoped updates retain
 		// their normal last-write semantics.
 		if (
-			expectedSessionFile !== undefined &&
+			sessionFile !== undefined &&
 			typeof previousDirectCost === "number" &&
 			Number.isFinite(previousDirectCost) &&
 			previousDirectCost >= 0 &&

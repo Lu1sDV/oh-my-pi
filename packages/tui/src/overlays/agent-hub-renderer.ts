@@ -114,7 +114,7 @@ function showsThinkingLevel(level: ThinkingLevel | undefined): level is Exclude<
 
 /** Model id, optional fast glyph, and thinking level, colored per theme. */
 function formatModelBadge(modelId: string, level: ThinkingLevel | undefined, fastMode?: boolean): string {
-	const model = theme.fg("muted", sanitizeDisplaySingleLine(modelId));
+	const model = theme.fg("muted", modelId);
 	const label = fastMode && theme.icon.fast ? `${model} ${theme.fg("warning", theme.icon.fast)}` : model;
 	if (!showsThinkingLevel(level)) return label;
 	const display = theme.thinking[level] ?? level;
@@ -258,14 +258,12 @@ function resolveModelBadge(
 		};
 	}
 	if (!model) return undefined;
-	return { model: model.id, level: model.thinking ? liveThinkingLevel : undefined, fallback: false, fastMode };
-}
-
-export function modelBadge(ref: AgentRecordLike, observed: ObservableSession | undefined): string | undefined {
-	const badge = resolveModelBadge(ref, observed);
-	if (!badge) return undefined;
-	const text = formatModelBadge(badge.model, badge.level, badge.fastMode);
-	return badge.fallback ? `${theme.fg("warning", "fallback →")} ${text}` : text;
+	return {
+		model: sanitizeDisplaySingleLine(model.id),
+		level: model.thinking ? liveThinkingLevel : undefined,
+		fallback: false,
+		fastMode,
+	};
 }
 
 /** Keep effort intact, sacrificing redundant role text before the model label. */
@@ -323,12 +321,12 @@ export interface ModelChip {
 	fastMode?: boolean;
 }
 
-/** Structured {@link modelBadge} for picker chips. */
+/** Structured model metadata for picker chips. */
 export function modelChip(ref: AgentRecordLike, observed: ObservableSession | undefined): ModelChip | undefined {
 	const badge = resolveModelBadge(ref, observed);
 	if (!badge) return undefined;
 	return {
-		text: sanitizeDisplaySingleLine(badge.model),
+		text: badge.model,
 		level: showsThinkingLevel(badge.level) ? badge.level : undefined,
 		dot: showsThinkingLevel(badge.level) ? thinkingToken(badge.level) : undefined,
 		fallback: badge.fallback,
@@ -336,13 +334,13 @@ export function modelChip(ref: AgentRecordLike, observed: ObservableSession | un
 	};
 }
 
-/** Native spans of {@link modelBadge}. */
+/** Native spans of the resolved model metadata. */
 export function modelBadgeSpans(ref: AgentRecordLike, observed: ObservableSession | undefined): TspSpan[] | undefined {
 	const badge = resolveModelBadge(ref, observed);
 	if (!badge) return undefined;
 	const spans: TspSpan[] = [];
 	if (badge.fallback) spans.push(span("fallback → ", "warning"));
-	spans.push(span(sanitizeDisplaySingleLine(badge.model), "muted"));
+	spans.push(span(badge.model, "muted"));
 	if (badge.fastMode && theme.icon.fast) spans.push(span(` ${theme.icon.fast}`, "warning"));
 	if (showsThinkingLevel(badge.level)) {
 		spans.push(span(` ${theme.thinking[badge.level] ?? badge.level}`, thinkingToken(badge.level)));

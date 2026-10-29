@@ -1342,8 +1342,6 @@ function isAsyncResultInjection(message: AgentMessage | undefined): boolean {
 	return message?.role === "custom" && message.customType === ASYNC_RESULT_MESSAGE_TYPE;
 }
 
-const registryAttributionOwners = new WeakMap<AgentRef, symbol>();
-
 function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 	const {
 		index,
@@ -2206,7 +2204,7 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 		const ref = AgentRegistry.global().get(id);
 		if (ref?.session === session) {
 			registryRef ??= ref;
-			if (registryRef === ref) registryAttributionOwners.set(ref, registryAttributionOwner);
+			if (registryRef === ref) AgentRegistry.global().claimAttributionOwner(ref, registryAttributionOwner);
 		}
 		// The session owns attribution: it knows which model produced its output
 		// and withholds an armed-but-unproven fallback. Re-deriving that here from
@@ -2432,7 +2430,7 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 		sawAssistantMessage: () => sawAssistantMessage,
 		rawOutput: () => (finalOutputChunks.length > 0 ? finalOutputChunks.join("") : outputChunks.join("")),
 		refreshFastMode: () => {
-			if (!registryRef || registryAttributionOwners.get(registryRef) !== registryAttributionOwner) return;
+			if (!registryRef || !AgentRegistry.global().isAttributionOwner(registryRef, registryAttributionOwner)) return;
 			const model = attributionSession?.model;
 			if (
 				model &&
@@ -3048,7 +3046,7 @@ async function finalizeRunResult(args: FinalizeRunArgs): Promise<SingleResult> {
 	monitor.scheduleProgress(true);
 	// A newer monitor supersedes this snapshot, but parking the same turn does
 	// not: detach may need this run's tier when an unproven model is selected.
-	if (monitor.registryRef && registryAttributionOwners.get(monitor.registryRef) === monitor.registryAttributionOwner) {
+	if (monitor.registryRef) {
 		AgentRegistry.global().setHistory(
 			id,
 			{
@@ -3056,8 +3054,7 @@ async function finalizeRunResult(args: FinalizeRunArgs): Promise<SingleResult> {
 				resolvedModelIsFallback: progress.resolvedModelIsFallback,
 				fastMode: progress.fastMode,
 			},
-			args.sessionFile,
-			monitor.registryRef,
+			{ sessionFile: args.sessionFile, ref: monitor.registryRef, owner: monitor.registryAttributionOwner },
 		);
 	}
 
@@ -5381,8 +5378,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			AgentRegistry.global().setHistory(
 				id,
 				{ outputPath: result.outputPath },
-				subtaskSessionFile,
-				monitor.registryRef,
+				{ sessionFile: subtaskSessionFile, ref: monitor.registryRef },
 			);
 		}
 		return result;

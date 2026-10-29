@@ -313,6 +313,43 @@ describe("persisted agent model attribution", () => {
 		expect(ref.history?.responseFastMode).toBeUndefined();
 	});
 
+	it("rejects superseded monitor writes at the registry boundary without retiring the owner on detach", () => {
+		const registry = new AgentRegistry();
+		const session = sessionStub(0);
+		Object.assign(session, {
+			model: { provider: SONNET.provider, id: SONNET.model },
+			servingModel: { selector: "anthropic/claude-sonnet-5", isFallback: false },
+			isFastModeActive: () => true,
+		});
+		const ref = registry.register({
+			id: "Worker",
+			displayName: "Worker",
+			kind: "sub",
+			session,
+			sessionFile: "/tmp/worker.jsonl",
+			history: { resolvedModel: "anthropic/claude-sonnet-5", fastMode: true },
+		});
+		const olderOwner = Symbol();
+		const owner = Symbol();
+		registry.claimAttributionOwner(ref, olderOwner);
+		registry.claimAttributionOwner(ref, owner);
+		const options = { sessionFile: "/tmp/worker.jsonl", ref, owner };
+		expect(
+			registry.setHistory(
+				ref.id,
+				{ resolvedModel: "openai-codex/gpt-5.6-sol", fastMode: false, outputPath: "/stale.md" },
+				{ ...options, owner: olderOwner },
+			),
+		).toBe(false);
+		expect(ref.history).toEqual({ resolvedModel: "anthropic/claude-sonnet-5", fastMode: true });
+
+		registry.detachSession(ref.id, ref);
+		expect(registry.setHistory(ref.id, { resolvedModel: "openai-codex/gpt-5.6-sol", fastMode: false }, options)).toBe(
+			true,
+		);
+		expect(ref.history).toMatchObject({ resolvedModel: "openai-codex/gpt-5.6-sol", fastMode: false });
+	});
+
 	it("fences delayed hydration attribution while retaining metadata, cost, and later rescans", async () => {
 		using tempDir = TempDir.createSync("@omp-delayed-runtime-attribution-");
 		const rootFile = path.join(tempDir.path(), "main.jsonl");
@@ -547,7 +584,7 @@ describe("persisted agent model attribution", () => {
 		expect(ref.status).toBe("parked");
 		expect(ref.session).toBeNull();
 		expect(ref.history?.directCost).toBeCloseTo(1);
-		expect(registry.setHistory("BuildThing", staleScanSnapshot!, transcriptFile)).toBe(true);
+		expect(registry.setHistory("BuildThing", staleScanSnapshot!, { sessionFile: transcriptFile })).toBe(true);
 		expect(ref.history?.directCost).toBeCloseTo(1);
 		// The stale persisted scan still supplies selected-leaf non-cost history;
 		// only its same-file cumulative direct-cost snapshot is rejected.
@@ -557,10 +594,10 @@ describe("persisted agent model attribution", () => {
 		const replacementFile = path.join(tempDir.path(), "replacement.jsonl");
 		expect(registry.attachSession("BuildThing", sessionStub(0.1), replacementFile, ref)).toBe(true);
 		expect(ref.history?.directCost).toBeUndefined();
-		expect(registry.setHistory("BuildThing", { directCost: 0.1 }, replacementFile)).toBe(true);
+		expect(registry.setHistory("BuildThing", { directCost: 0.1 }, { sessionFile: replacementFile })).toBe(true);
 		expect(ref.history?.directCost).toBeCloseTo(0.1);
 		// A late scan from the superseded transcript cannot update the new ref.
-		expect(registry.setHistory("BuildThing", staleScanSnapshot!, transcriptFile)).toBe(false);
+		expect(registry.setHistory("BuildThing", staleScanSnapshot!, { sessionFile: transcriptFile })).toBe(false);
 		expect(ref.history?.directCost).toBeCloseTo(0.1);
 		// Without a transcript identity token, setHistory keeps last-write semantics.
 		expect(registry.setHistory("BuildThing", { directCost: 0.05 })).toBe(true);

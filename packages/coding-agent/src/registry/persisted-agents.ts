@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AssistantMessage } from "@oh-my-pi/pi-ai";
+import { type AssistantMessage, parseServiceTier } from "@oh-my-pi/pi-ai";
 import { logger } from "@oh-my-pi/pi-utils";
 import { ADVISOR_TRANSCRIPT_FILENAME, isAdvisorTranscriptName } from "../advisor/transcript-recorder";
 import { resolveExplicitModelRole } from "../config/model-resolver";
@@ -132,21 +132,14 @@ function assistantMetrics(message: Record<string, unknown>): AssistantMetrics {
 	const content = Array.isArray(message.content) ? message.content : [];
 	const provider = typeof message.provider === "string" ? message.provider : undefined;
 	const model = typeof message.model === "string" ? message.model : undefined;
+	const serviceTier = parseServiceTier(message.serviceTier);
 	return {
 		tokens: usageTokens(usage),
 		tools: content.filter(part => recordOf(part)?.type === "toolCall").length,
 		cost: finiteNumber(cost?.total),
 		contextTokens: finiteNumber(usage.totalTokens) || undefined,
 		resolvedModel: provider && model ? `${provider}/${model}` : undefined,
-		fastMode:
-			message.serviceTier === "priority" || message.serviceTier === "ultrafast"
-				? true
-				: message.serviceTier === "auto" ||
-					  message.serviceTier === "default" ||
-					  message.serviceTier === "flex" ||
-					  message.serviceTier === "scale"
-					? false
-					: undefined,
+		fastMode: serviceTier === undefined ? undefined : serviceTier === "priority" || serviceTier === "ultrafast",
 		served: assistantTurnProducedOutput({
 			stopReason: message.stopReason,
 			content,
@@ -726,7 +719,11 @@ export async function registerPersistedSubagents(
 			const history = await readPersistedAgentHistory(transcript, shouldContinue);
 			if (!shouldContinue()) return;
 			if (
-				registry.setHistory(transcript.id, history, transcript.sessionFile, ref, attributionRevision) &&
+				registry.setHistory(transcript.id, history, {
+					sessionFile: transcript.sessionFile,
+					ref,
+					attributionRevision,
+				}) &&
 				registry.getAttributionRevision(ref) === attributionRevision &&
 				stamp !== undefined
 			) {

@@ -1,11 +1,12 @@
 import { afterEach, beforeAll, expect, spyOn, test, vi } from "bun:test";
 import * as fs from "node:fs";
+import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import type { TspKind, TspPickerProps, TspText } from "@oh-my-pi/pi-wire";
 import type { DescribeContext, NativeChild, NativeNode } from "../src/native/node";
 import { AgentHubOverlayComponent } from "../src/overlays/agent-hub";
 import type { AgentRecordLike } from "../src/overlays/agent-hub-types";
-import { boundedModelMetadata, modelBadge } from "../src/overlays/agent-hub-renderer";
+import { boundedModelMetadata } from "../src/overlays/agent-hub-renderer";
 import {
 	type EventBusLike,
 	SessionObserverRegistry,
@@ -263,7 +264,6 @@ test.each(["roster", "tree"])("fast model placement matches both panes in %s vie
 				.filter(line => line.includes(standard)).length,
 		).toBe(2);
 		expect(nativeTexts(hub.describe(genericCx)).filter(line => line.includes(standard)).length).toBe(2);
-		expect(pickerProps(hub).items?.[0]?.chips).toBeUndefined();
 		expect(nativeTexts(hub.describe(pickerCx))).toContain(`gpt-worker${theme.sep.dot}high`);
 	} finally {
 		hub.dispose();
@@ -517,12 +517,50 @@ test("model metadata does not borrow fast policy across explicit routed identiti
 			durationMs: 0,
 		},
 	};
-	expect(modelBadge(ref, observed)).not.toContain(theme.icon.fast);
+	expect(boundedModelMetadata(ref, observed, undefined, 120)).not.toContain(theme.icon.fast);
+});
+
+test("live model labels stay single-line in wide and narrow Hub rendering", () => {
+	const hub = createHub([
+		agent("Worker", 1_000, {
+			session: {
+				model: buildModel({
+					id: `unsafe\n\u0007model-${"long-".repeat(20)}`,
+					name: "Unsafe model",
+					provider: "custom",
+					api: "openai-completions",
+					baseUrl: "https://example.com",
+					reasoning: true,
+					input: ["text"],
+					contextWindow: 128_000,
+					maxTokens: 8_192,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				}),
+				thinkingLevel: ThinkingLevel.High,
+				getSessionStats: () => ({
+					tokens: { input: 0, output: 0, cacheWrite: 0 },
+					assistantMessages: 0,
+					toolCalls: 0,
+					cost: 0,
+				}),
+				abort: async () => {},
+			},
+		}),
+	]);
+	try {
+		for (const width of [400, 80]) {
+			const lines = hub.render(width).map(line => Bun.stripANSI(line));
+			expect(lines.some(line => line.includes("unsafe"))).toBe(true);
+			expect(lines.every(line => !/[\n\u0007]/.test(line))).toBe(true);
+			expect(lines.some(line => line.includes(`model-${"long-".repeat(20)}`))).toBe(width === 400);
+		}
+	} finally {
+		hub.dispose();
+	}
 });
 
 test("an agent without model metadata remains renderable", () => {
 	const ref = agent("Unknown", 1_000);
-	expect(modelBadge(ref, undefined)).toBeUndefined();
 	const hub = createHub([ref]);
 	try {
 		expect(
@@ -639,7 +677,7 @@ test("an unserved revived fallback does not replace retained model attribution",
 			abort: async () => {},
 		},
 	});
-	const badge = Bun.stripANSI(modelBadge(ref, undefined) ?? "");
+	const badge = Bun.stripANSI(boundedModelMetadata(ref, undefined, undefined, 120));
 	expect(badge).toBe("retained-model");
 });
 
