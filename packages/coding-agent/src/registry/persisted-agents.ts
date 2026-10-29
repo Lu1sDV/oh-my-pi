@@ -117,6 +117,7 @@ interface AssistantMetrics {
 	cost: number;
 	contextTokens?: number;
 	resolvedModel?: string;
+	fastMode?: boolean;
 	/**
 	 * True when this turn produced output, making its model the run's. Uses the
 	 * same predicate as the live session, so replaying a transcript reaches the
@@ -137,6 +138,15 @@ function assistantMetrics(message: Record<string, unknown>): AssistantMetrics {
 		cost: finiteNumber(cost?.total),
 		contextTokens: finiteNumber(usage.totalTokens) || undefined,
 		resolvedModel: provider && model ? `${provider}/${model}` : undefined,
+		fastMode:
+			message.serviceTier === "priority" || message.serviceTier === "ultrafast"
+				? true
+				: message.serviceTier === "auto" ||
+					  message.serviceTier === "default" ||
+					  message.serviceTier === "flex" ||
+					  message.serviceTier === "scale"
+					? false
+					: undefined,
 		served: assistantTurnProducedOutput({
 			stopReason: message.stopReason,
 			content,
@@ -260,6 +270,7 @@ async function readPersistedAgentHistory(
 	let modelRole: string | undefined;
 	let contextTokens: number | undefined;
 	let servedModel: string | undefined;
+	let fastMode: boolean | undefined;
 	let latestModelChange: { model: string; resolvedModelIsFallback: boolean } | undefined;
 	const visited = new Set<string>();
 	for (let id = leafId; id && !visited.has(id); id = parents.get(id)) {
@@ -291,6 +302,7 @@ async function readPersistedAgentHistory(
 		if (!assistant) continue;
 		if (servedModel === undefined && assistant.served && assistant.resolvedModel) {
 			servedModel = assistant.resolvedModel;
+			fastMode = assistant.fastMode;
 		}
 		metrics.requests++;
 		metrics.tokens += assistant.tokens;
@@ -311,6 +323,7 @@ async function readPersistedAgentHistory(
 		directCost,
 		...(metrics.requests > 0 ? { metrics } : {}),
 		...(resolvedModel ? { resolvedModel, resolvedModelIsFallback } : {}),
+		responseFastMode: fastMode,
 		...(modelRole ? { modelRole } : {}),
 	};
 }
@@ -707,11 +720,16 @@ export async function registerPersistedSubagents(
 			if (!transcript) return;
 			const ref = registry.get(transcript.id);
 			if (!ref || ref.sessionFile !== transcript.sessionFile) continue;
+			const attributionRevision = registry.getAttributionRevision(ref);
 			const stamp = await transcriptStamp(transcript.sessionFile);
 			if (stamp !== undefined && historyStamps.get(ref) === stamp) continue;
 			const history = await readPersistedAgentHistory(transcript, shouldContinue);
 			if (!shouldContinue()) return;
-			if (registry.setHistory(transcript.id, history, transcript.sessionFile) && stamp !== undefined) {
+			if (
+				registry.setHistory(transcript.id, history, transcript.sessionFile, ref, attributionRevision) &&
+				registry.getAttributionRevision(ref) === attributionRevision &&
+				stamp !== undefined
+			) {
 				historyStamps.set(ref, stamp);
 			}
 		}

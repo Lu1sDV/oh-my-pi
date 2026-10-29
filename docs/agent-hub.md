@@ -41,6 +41,12 @@ On a wide terminal, the selected agent's inspector appears beside the roster. On
 
 Metrics depend on the progress or persisted usage data available for that agent. Missing data appears as `usage —` rather than an estimate.
 
+The roster and inspector show the theme's fast-mode glyph between the model and thinking level when that agent's session applies a supported fast tier (`priority` or `ultrafast`). The indicator uses the agent's own state, not the parent's current `/fast` setting. It does not measure response speed.
+
+When space is tight, text-terminal metadata keeps the fast glyph and complete thinking label together, shortening the role first and then the model name instead of clipping the effort label.
+
+Known fast-mode state remains visible after an agent settles or is parked. After a restart, the Hub restores the tier recorded on the latest response that produced output on the active transcript branch. Responses without recognized tier metadata leave historical status unknown; the Hub does not infer it from configured tiers or today's settings. No glyph can therefore mean standard processing or unknown status.
+
 ### Roster controls
 
 | Key or input                | Action                                                                       |
